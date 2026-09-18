@@ -23,6 +23,9 @@ def get_valid_input():
         except ValueError:
             print("Invalid input. Please enter a valid number.")
 
+def process_delivery(current_total, new_value):
+    return current_total + new_value
+
 while (True):
     user_input = input("Enter inventory amount or 'quit' to exit: ")
     if user_input.lower() == 'quit':
