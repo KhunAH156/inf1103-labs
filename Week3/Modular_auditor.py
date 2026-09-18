@@ -26,6 +26,9 @@ def get_valid_input():
 def process_delivery(current_total, new_value):
     return current_total + new_value
 
+def calculate_tax(amount):
+    return amount * 0.10
+
 while (True):
     user_input = input("Enter inventory amount or 'quit' to exit: ")
     if user_input.lower() == 'quit':
