@@ -34,6 +34,13 @@ def load_inventory(filepath=INVENTORY_FILE):
     print(f"Loaded saved inventory: {total} units, {len(history)} past transaction(s).")
     return total, history
 
+def save_inventory(total, history, filepath=INVENTORY_FILE):
+    """Write the final total and the full transaction history to disk."""
+    with open(filepath, "w") as file:
+        file.write(f"total={total}\n")
+        file.write("history=" + ",".join(str(v) for v in history) + "\n")
+    print(f"Inventory successfully saved to {os.path.basename(filepath)}")
+
 def get_valid_input():
     while True:
         user_input = input("Enter inventory amount or 'quit' to exit: ")
