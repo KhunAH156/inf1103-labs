@@ -1,3 +1,8 @@
+import os
+ 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INVENTORY_FILE = os.path.join(BASE_DIR, "inventory.txt")
+
 inventory = 0
 failed_attempts = 0
 print("-----------------------------------")
