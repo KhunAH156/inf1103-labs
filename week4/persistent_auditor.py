@@ -73,14 +73,19 @@ def generate_report(total_units, failed_attempts):
     print(f"Total Inventory: {total_units}")
     print(f"Failed/Rejected Entries: {failed_attempts}")
 
+inventory, history = load_inventory()
+
 while True:
     result = get_valid_input()
 
     if result == "quit":
         generate_report(inventory, failed_attempts)
+        print(f"Transaction History: {history}")
+        save_inventory(inventory, history)
         break
 
     inventory = process_delivery(inventory, result)
+    history.append(result)
 
     tax = calculate_tax(result)
 
@@ -91,4 +96,6 @@ while True:
     if inventory > 500:
         print(f"Inventory limit exceeded: {inventory}")
         generate_report(inventory, failed_attempts)
+        print(f"Transaction History: {history}")
+        save_inventory(inventory, history)
         break
