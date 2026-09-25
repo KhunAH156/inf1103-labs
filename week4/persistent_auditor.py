@@ -1,0 +1,57 @@
+inventory = 0
+failed_attempts = 0
+print("-----------------------------------")
+print("Welcome to the Inventory Auditor!")
+print("-----------------------------------")
+
+def get_valid_input():
+    while True:
+        user_input = input("Enter inventory amount or 'quit' to exit: ")
+
+        if user_input.lower() == "quit":
+            return "quit"
+
+        try:
+            value = int(user_input)
+
+            if value < 0:
+                print("Input cannot be negative. Please enter a valid number.")
+                continue
+
+            return value
+
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+def process_delivery(current_total, new_value):
+    return current_total + new_value
+
+def calculate_tax(amount):
+    return amount * 0.10
+
+def generate_report(total_units, failed_attempts):
+    print("-----------------------------------")
+    print("Inventory Audit Report")
+    print("-----------------------------------")
+    print(f"Total Inventory: {total_units}")
+    print(f"Failed/Rejected Entries: {failed_attempts}")
+
+while True:
+    result = get_valid_input()
+
+    if result == "quit":
+        generate_report(inventory, failed_attempts)
+        break
+
+    inventory = process_delivery(inventory, result)
+
+    tax = calculate_tax(result)
+
+    print(f"Delivery: {result}")
+    print(f"Tax: {tax:.2f}")
+    print(f"Current inventory: {inventory}")
+
+    if inventory > 500:
+        print(f"Inventory limit exceeded: {inventory}")
+        generate_report(inventory, failed_attempts)
+        break
