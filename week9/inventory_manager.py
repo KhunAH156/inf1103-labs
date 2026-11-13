@@ -1,16 +1,49 @@
-"""Original inventory menu, extended for suppliers, product types and orders."""
+"""Inventory CLI: retain Lab 7 features and integrate supplier and order flows."""
 
 import json
 import os
+from typing import cast
 
+from digital_product import DigitalProduct
 from inventory import Inventory
 from order import Order
-from product import DigitalProduct, PhysicalProduct, Product
+from physical_product import PhysicalProduct
 from supplier import Supplier
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", BASE_DIR)
 INVENTORY_FILE = os.path.join(DATA_DIR, "inventory.json")
+
+PRODUCT_TYPES = {
+    "physical": PhysicalProduct,
+    "digital": DigitalProduct,
+}
+
+
+def restore_supplier(item: dict[str, object],
+                     known_suppliers: dict[str, Supplier]) -> Supplier:
+    """Share Supplier instances with the same ID when restoring products."""
+    raw_supplier = item.get("supplier")
+    if raw_supplier is None:
+        # Pre-Lab-8 inventory.json records did not contain a supplier.
+        # Use an explicit placeholder so previous user data is not discarded.
+        candidate = Supplier("UNASSIGNED", "Unassigned (legacy record)",
+                             "unassigned@example.invalid")
+    else:
+        if not isinstance(raw_supplier, dict):
+            raise ValueError("Supplier must be a JSON object.")
+        if not all(isinstance(k, str) and isinstance(v, str)
+                   for k, v in raw_supplier.items()):
+            raise ValueError("Supplier fields must be strings.")
+        candidate = Supplier.from_dict(cast(dict[str, str], raw_supplier))
+
+    original = known_suppliers.get(candidate.supplier_id)
+    if original is not None:
+        if original.to_dict() != candidate.to_dict():
+            raise ValueError("Conflicting supplier details for the same ID.")
+        return original
+    known_suppliers[candidate.supplier_id] = candidate
+    return candidate
 
 
 def load_inventory(filepath: str = INVENTORY_FILE) -> Inventory:
@@ -26,9 +59,16 @@ def load_inventory(filepath: str = INVENTORY_FILE) -> Inventory:
             data = json.load(file)
         if not isinstance(data, list):
             raise ValueError("Expected a list of products.")
-        suppliers: dict[str, Supplier] = {}
-        products = [Product.from_dict(item, suppliers) for item in data]
-        for product in products:
+
+        known_suppliers: dict[str, Supplier] = {}
+        for item in data:
+            if not isinstance(item, dict):
+                raise ValueError("Every product must be a JSON object.")
+            product_type = item["type"]
+            if product_type not in PRODUCT_TYPES:
+                raise ValueError(f"Unknown product type: {product_type}")
+            supplier = restore_supplier(item, known_suppliers)
+            product = PRODUCT_TYPES[product_type].from_dict(item, supplier)
             if not inventory.add_product(product):
                 raise ValueError("Duplicate product ID in inventory file.")
     except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
@@ -56,8 +96,9 @@ def show_menu() -> None:
     print("3. Update Stock")
     print("4. Search Product")
     print("5. Save Inventory")
-    print("6. Exit")
+    print("6. Remove Product")
     print("7. Create Order")
+    print("8. Exit")
     print("----------------------------")
 
 
@@ -73,16 +114,20 @@ def get_product_id(prompt: str) -> str:
     return get_text(prompt).upper()
 
 
-def get_price(prompt: str) -> float:
+def get_non_negative_number(prompt: str, label: str) -> float:
     while True:
         try:
             value = float(input(prompt))
             if not (0 <= value < float("inf")):
-                print("Price must be a finite, non-negative number.")
+                print(f"{label} must be a finite, non-negative number.")
                 continue
-            return round(value, 2)
+            return value
         except ValueError:
-            print("Invalid input. Please enter a valid price.")
+            print(f"Invalid input. Please enter a valid {label.lower()}.")
+
+
+def get_price(prompt: str) -> float:
+    return round(get_non_negative_number(prompt, "Price"), 2)
 
 
 def get_quantity(prompt: str) -> int:
@@ -97,38 +142,56 @@ def get_quantity(prompt: str) -> int:
             print("Invalid input. Please enter a whole number.")
 
 
+def get_product_type() -> str:
+    while True:
+        print("Select Product Type:")
+        print("1. Physical Product")
+        print("2. Digital Product")
+        choice = input("Enter option (1 or 2): ").strip()
+        if choice == "1":
+            return "physical"
+        if choice == "2":
+            return "digital"
+        print("Invalid option. Choose 1 or 2.")
+
+
 def get_supplier(inventory: Inventory) -> Supplier:
+    """Reuse an existing supplier object or create one independently."""
     supplier_id = get_product_id("Supplier ID: ")
     for product in inventory.products:
         if product.supplier.supplier_id == supplier_id:
-            print(f"Reusing supplier: {product.supplier.name}")
+            print(f"Using existing supplier: {product.supplier.name}")
             return product.supplier
-    name = get_text("Supplier name: ")
-    email = get_text("Supplier email: ")
-    return Supplier(supplier_id, name, email)
+
+    print("New supplier. Enter supplier details:")
+    name = get_text("Supplier Name: ")
+    while True:
+        email = get_text("Supplier Contact Email: ")
+        try:
+            return Supplier(supplier_id, name, email)
+        except ValueError as error:
+            print(error)
 
 
 def handle_add(inventory: Inventory) -> None:
     print("Add New Product")
+    product_type = get_product_type()
     product_id = get_product_id("Product ID: ")
     if inventory.find_product(product_id) is not None:
         print(f"Product {product_id} already exists. Use Update Stock instead.")
         return
+
     name = get_text("Product Name: ")
     price = get_price("Price: ")
     stock = get_quantity("Stock Quantity: ")
     supplier = get_supplier(inventory)
-    while True:
-        kind = get_text("Type (P for physical / D for digital): ").upper()
-        if kind in {"P", "D"}:
-            break
-        print("Please enter P or D.")
-    if kind == "P":
-        weight = get_price("Weight in kg (0 if unknown): ")
-        product = PhysicalProduct(product_id, name, price, stock, supplier, weight)
+    if product_type == "physical":
+        weight = get_non_negative_number("Weight (kg): ", "Weight")
+        product = PhysicalProduct(product_id, name, price, stock, weight, supplier)
     else:
-        link = get_text("Download link: ")
-        product = DigitalProduct(product_id, name, price, stock, supplier, link)
+        download_size = get_non_negative_number("Download Size (MB): ", "Download size")
+        product = DigitalProduct(product_id, name, price, stock, download_size, supplier)
+
     if inventory.add_product(product):
         print("Product added successfully!")
 
@@ -159,25 +222,33 @@ def handle_search(inventory: Inventory) -> None:
         product.display_information()
 
 
+def handle_remove(inventory: Inventory) -> None:
+    product_id = get_product_id("Product ID to remove: ")
+    if inventory.remove_product(product_id):
+        print("Product reference removed from this inventory.")
+    else:
+        print("Product not found.")
+
+
 def handle_order(inventory: Inventory) -> None:
-    """Create an in-memory order; the lab does not require persisted orders."""
-    order = Order(get_text("Order ID: "))
+    """Make an order in the current session; no stock is automatically changed."""
+    order = Order(get_product_id("New Order ID: "))
+    print("Enter product IDs to order (blank to finish).")
     while True:
-        product_id = get_product_id("Product ID (or DONE to finish): ")
-        if product_id == "DONE":
+        product_id = input("Product ID: ").strip().upper()
+        if not product_id:
             break
         product = inventory.find_product(product_id)
         if product is None:
-            print("Product not found.")
+            print("Product not found. Try again.")
             continue
         quantity = get_quantity("Order quantity: ")
         if quantity == 0:
-            print("Quantity must be greater than zero.")
+            print("Quantity must be at least 1.")
             continue
         order.add_order_line(product, quantity)
-        print("Order line added.")
-    order.display_information()
-    print("This lab's orders are demonstrations and do not change inventory stock.")
+    order.display_order()
+    print("Orders are demonstrations for this lab; only inventory is saved to JSON.")
 
 
 def handle_exit(inventory: Inventory) -> None:
@@ -198,7 +269,7 @@ def main() -> None:
             show_menu()
             choice = input("Enter option: ").strip()
             if choice == "1":
-                inventory.display_all()
+                inventory.display_all_products()
             elif choice == "2":
                 handle_add(inventory)
             elif choice == "3":
@@ -208,14 +279,16 @@ def main() -> None:
             elif choice == "5":
                 print("Saving inventory...")
                 if save_inventory(inventory):
-                    print(f"Inventory saved to {os.path.basename(INVENTORY_FILE)}.")
+                    print(f"Inventory saved successfully to {os.path.basename(INVENTORY_FILE)}.")
             elif choice == "6":
-                handle_exit(inventory)
-                break
+                handle_remove(inventory)
             elif choice == "7":
                 handle_order(inventory)
+            elif choice == "8":
+                handle_exit(inventory)
+                break
             else:
-                print("Invalid option. Please enter a number from 1 to 7.")
+                print("Invalid option. Please enter a number from 1 to 8.")
     except (KeyboardInterrupt, EOFError):
         print()
         handle_exit(inventory)
